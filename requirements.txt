@@ -1,0 +1,6 @@
+pymongo==4.6.0
+pymongo[srv]
+supabase==1.1.1
+sentence-transformers
+qdrant-client
+python-dotenv
