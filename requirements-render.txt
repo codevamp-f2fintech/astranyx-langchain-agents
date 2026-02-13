@@ -1,0 +1,9 @@
+qdrant-client==1.16.2
+sentence-transformers==5.2.2
+boto3
+pymongo
+python-dotenv
+pdf2image
+pytesseract
+Pillow
+PyMuPDF
