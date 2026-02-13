@@ -1,0 +1,28 @@
+services:
+  - type: worker
+    name: resume-agent
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    region: frankfurt
+    plan: starter
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        sync: false
+      - key: AWS_S3_BUCKET
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: AGENT
+        value: index
+      - key: MODEL_NAME
+        value: sentence-transformers/all-MiniLM-L6-v2
+      - key: BATCH_SIZE
+        value: "10"
