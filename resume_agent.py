@@ -115,7 +115,7 @@ def extract_s3_key(url: str) -> str:
     return url.split(".amazonaws.com/")[-1]
 
 def extract_text_from_s3(url: str) -> str:
-    if not s3:
+    if s3 is None:
         raise RuntimeError("S3 client not configured")
     key = extract_s3_key(url)
     print(f"   📥 Downloading: {key}")
@@ -149,13 +149,13 @@ def extract_text_from_s3(url: str) -> str:
 
 # Agents
 def resume_indexing_agent():
-    if not applications:
+    if applications is None:
         print("❌ MongoDB not configured; cannot run indexing agent")
         return
-    if not qdrant:
+    if qdrant is None:
         print("❌ Qdrant not configured; cannot run indexing agent")
         return
-    if not model:
+    if model is None:
         print("❌ Embedding model not loaded; cannot run indexing agent")
         return
 
@@ -222,23 +222,23 @@ def clean_html(raw_html):
 
 
 def jd_matching_agent():
-    if not applications:
+    if applications is None:
         print("❌ MongoDB not configured; cannot run JD matching agent")
         return
-    if not qdrant:
+    if qdrant is None:
         print("❌ Qdrant not configured; cannot run JD matching agent")
         return
-    if not model:
+    if model is None:
         print("❌ Embedding model not loaded; cannot run JD matching agent")
         return
 
     print("\n🚀 JD MATCHING AGENT STARTED")
-    companies = db.get("companies") if db else None
-    jobs = db.get("jobs") if db else None
-    job_statuses = db.get("job-statuses") if db else None
+    companies = db.get("companies") if db is not None else None
+    jobs = db.get("jobs") if db is not None else None
+    job_statuses = db.get("job-statuses") if db is not None else None
 
     # find AI-enabled companies
-    ai_companies = list(companies.find({"aiFeaturesEnabled": True})) if companies else []
+    ai_companies = list(companies.find({"aiFeaturesEnabled": True})) if companies is not None else []
     if not ai_companies:
         print("❌ No AI enabled companies found")
         return
@@ -310,7 +310,7 @@ if __name__ == "__main__":
         print("\n🎯 Agent finished")
     finally:
         try:
-            if mongo:
+            if mongo is not None:
                 mongo.close()
                 print("✅ MongoDB closed")
         except Exception:

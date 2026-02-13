@@ -1,10 +1,10 @@
 services:
-  - type: worker
+  - type: web
     name: resume-agent
     runtime: docker
     dockerfilePath: ./Dockerfile
     region: frankfurt
-    plan: starter
+    plan: free
     envVars:
       - key: MONGODB_URI
         sync: false

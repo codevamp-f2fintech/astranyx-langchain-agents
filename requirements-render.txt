@@ -9,3 +9,5 @@ Pillow
 PyMuPDF
 beautifulsoup4
 lxml
+flask
+gunicorn

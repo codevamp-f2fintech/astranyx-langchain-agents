@@ -24,5 +24,8 @@ COPY . /app
 RUN useradd --create-home appuser && chown -R appuser /app
 USER appuser
 
-# Default command runs the agent. Use env AGENT=index|matching|both to control.
-CMD ["python", "resume_agent.py"]
+# Expose port for Render
+EXPOSE 10000
+
+# Run Flask via gunicorn — timeout 120s for model loading
+CMD ["gunicorn", "server:app", "--bind", "0.0.0.0:10000", "--timeout", "120", "--workers", "1"]
