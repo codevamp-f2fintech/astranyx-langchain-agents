@@ -7,3 +7,5 @@ pdf2image
 pytesseract
 Pillow
 PyMuPDF
+beautifulsoup4
+lxml

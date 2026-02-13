@@ -20,14 +20,24 @@ import pytesseract
 from bs4 import BeautifulSoup
 import re
 
+def _getenv_strip(name, default=None):
+    v = os.getenv(name, default)
+    if v is None:
+        return v
+    v = v.strip()
+    # Strip surrounding quotes if present
+    if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
+        v = v[1:-1].strip()
+    return v
+
 # Configuration from env (with sensible defaults)
-MONGO_URI = os.getenv("MONGODB_URI")
-AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY_ID")
-AWS_SECRET_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_REGION = os.getenv("AWS_REGION")
-S3_BUCKET = os.getenv("AWS_S3_BUCKET")
-QDRANT_URL = os.getenv("QDRANT_URL")
-QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+MONGO_URI = _getenv_strip("MONGODB_URI")
+AWS_ACCESS_KEY = _getenv_strip("AWS_ACCESS_KEY_ID")
+AWS_SECRET_KEY = _getenv_strip("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = _getenv_strip("AWS_REGION")
+S3_BUCKET = _getenv_strip("AWS_S3_BUCKET")
+QDRANT_URL = _getenv_strip("QDRANT_URL")
+QDRANT_API_KEY = _getenv_strip("QDRANT_API_KEY")
 
 DB_NAME = os.getenv("DB_NAME", "ats")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "applications")
