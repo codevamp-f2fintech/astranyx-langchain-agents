@@ -12,10 +12,9 @@ import time
 from flask import Flask, jsonify, request
 
 # Import everything from resume_agent (clients, model, agent functions)
-from resume_agent import (
     resume_indexing_agent,
     jd_matching_agent,
-    mongo,
+    init_resources,
     AGENT,
 )
 

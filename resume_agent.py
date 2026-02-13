@@ -67,45 +67,51 @@ if missing:
 
 print("\n🤖 AGENT STARTED")
 
-# AWS client
-s3 = None
-if AWS_ACCESS_KEY and AWS_SECRET_KEY and AWS_REGION and S3_BUCKET:
-    s3 = boto3.client(
-        "s3",
-        aws_access_key_id=AWS_ACCESS_KEY,
-        aws_secret_access_key=AWS_SECRET_KEY,
-        region_name=AWS_REGION,
-    )
-
-# MongoDB
+# Global state for lazy loading
 mongo = None
 db = None
 applications = None
-if MONGO_URI:
-    mongo = MongoClient(MONGO_URI)
-    db = mongo[DB_NAME]
-    applications = db[COLLECTION_NAME]
-
-# Qdrant
 qdrant = None
-if QDRANT_URL and QDRANT_API_KEY:
-    qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, prefer_grpc=False, timeout=120)
-
-# Ensure qdrant collection exists when available
-if qdrant and not qdrant.collection_exists(QDRANT_COLLECTION):
-    qdrant.create_collection(
-        collection_name=QDRANT_COLLECTION,
-        vectors_config=VectorParams(size=384, distance=Distance.COSINE),
-    )
-
-# Load model (may be large)
 model = None
-try:
-    model = SentenceTransformer(MODEL_NAME)
-    print("✅ Embedding model loaded")
-except Exception as e:
-    print(f"❌ Failed to load model {MODEL_NAME}: {e}")
-    # Depending on your needs you may want to exit here
+s3 = None
+
+def init_resources():
+    """Lazy load resources (model, clients) to avoid blocking import."""
+    global mongo, db, applications, qdrant, model, s3
+    
+    # AWS client
+    if not s3 and AWS_ACCESS_KEY and AWS_SECRET_KEY and AWS_REGION and S3_BUCKET:
+        s3 = boto3.client(
+            "s3",
+            aws_access_key_id=AWS_ACCESS_KEY,
+            aws_secret_access_key=AWS_SECRET_KEY,
+            region_name=AWS_REGION,
+        )
+
+    # MongoDB
+    if not mongo and MONGO_URI:
+        mongo = MongoClient(MONGO_URI)
+        db = mongo[DB_NAME]
+        applications = db[COLLECTION_NAME]
+
+    # Qdrant
+    if not qdrant and QDRANT_URL and QDRANT_API_KEY:
+        qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, prefer_grpc=False, timeout=120)
+        # Ensure qdrant collection exists when available
+        if not qdrant.collection_exists(QDRANT_COLLECTION):
+            qdrant.create_collection(
+                collection_name=QDRANT_COLLECTION,
+                vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+            )
+
+    # Load model (may be large)
+    if not model:
+        try:
+            print(f"⏳ Loading embedding model: {MODEL_NAME}...")
+            model = SentenceTransformer(MODEL_NAME)
+            print("✅ Embedding model loaded")
+        except Exception as e:
+            print(f"❌ Failed to load model {MODEL_NAME}: {e}")
 
 # Helpers
 def mongo_id_to_uuid(mongo_id: str) -> str:
@@ -149,6 +155,8 @@ def extract_text_from_s3(url: str) -> str:
 
 # Agents
 def resume_indexing_agent():
+    init_resources()  # Verify resources are loaded
+    
     if applications is None:
         print("❌ MongoDB not configured; cannot run indexing agent")
         return
@@ -222,6 +230,8 @@ def clean_html(raw_html):
 
 
 def jd_matching_agent():
+    init_resources()  # Verify resources are loaded
+    
     if applications is None:
         print("❌ MongoDB not configured; cannot run JD matching agent")
         return
