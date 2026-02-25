@@ -1,0 +1,10 @@
+services:
+  - type: worker
+    name: hastranyx-langchain-agents
+    runtime: python
+
+    buildCommand: |
+      pip install -r requirements.txt
+      bash build.sh
+
+    startCommand: python main.py
