@@ -164,9 +164,14 @@ def main():
     load_dotenv()
     logger.info("✅ Environment variables loaded")
     
-
+    # Check for required API keys (customize this list)
+    required_vars = ['OPENAI_API_KEY']  # Add your required keys
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
     
-  
+    if missing_vars:
+        logger.warning(f"⚠️ Missing environment variables: {', '.join(missing_vars)}")
+        logger.warning("Some functionality may be limited")
+    
     # Determine which agents to run based on environment variable
     # You can set AGENT_TO_RUN in Render environment variables
     agent_to_run = os.getenv('AGENT_TO_RUN', 'both').lower()
