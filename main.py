@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Main entry point for Astranyx LangChain Agents
-This file runs the resume agent and includes a health check server for Render
+Handles resume indexing and job description processing
 """
 
 import os
@@ -67,101 +67,177 @@ def run_health_server():
         logger.warning("⚠️ Continuing without health server - Render may timeout")
 
 # ============================================
-# YOUR EXISTING IMPORTS
+# YOUR AGENT IMPORTS
 # ============================================
 
-# Import your existing modules
+# Import your agent modules
 try:
-    from resume_agent import run_resume_agent
-    logger.info("✅ Successfully imported resume_agent")
+    from resume_indexing_agent import run_resume_indexing_agent
+    logger.info("✅ Successfully imported resume_indexing_agent")
+    resume_indexing_available = True
 except ImportError as e:
-    logger.error(f"❌ Failed to import resume_agent: {e}")
-    logger.error("Make sure resume_agent.py exists in the same directory")
-    run_resume_agent = None  # Set to None so we can handle gracefully
+    logger.error(f"❌ Failed to import resume_indexing_agent: {e}")
+    logger.error("Make sure resume_indexing_agent.py exists in the same directory")
+    resume_indexing_available = False
+    run_resume_indexing_agent = None
+
+try:
+    from job_description_agent import run_job_description_agent
+    logger.info("✅ Successfully imported job_description_agent")
+    job_description_available = True
+except ImportError as e:
+    logger.error(f"❌ Failed to import job_description_agent: {e}")
+    logger.error("Make sure job_description_agent.py exists in the same directory")
+    job_description_available = False
+    run_job_description_agent = None
 
 # Import other dependencies you might need
 import sys
 from dotenv import load_dotenv
 
 # ============================================
-# YOUR EXISTING CODE
+# MAIN APPLICATION LOGIC
 # ============================================
 
+def run_resume_indexing():
+    """Wrapper function to run resume indexing agent"""
+    if not resume_indexing_available or not run_resume_indexing_agent:
+        logger.error("❌ Cannot run resume_indexing_agent - import failed")
+        return None
+    
+    try:
+        logger.info("📄 Starting Resume Indexing Agent...")
+        # Add any parameters your agent needs
+        # result = run_resume_indexing_agent(param1, param2)
+        result = run_resume_indexing_agent()
+        logger.info(f"✅ Resume Indexing Agent completed successfully")
+        return result
+    except Exception as e:
+        logger.error(f"❌ Error in Resume Indexing Agent: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def run_job_description():
+    """Wrapper function to run job description agent"""
+    if not job_description_available or not run_job_description_agent:
+        logger.error("❌ Cannot run job_description_agent - import failed")
+        return None
+    
+    try:
+        logger.info("💼 Starting Job Description Agent...")
+        # Add any parameters your agent needs
+        # result = run_job_description_agent(param1, param2)
+        result = run_job_description_agent()
+        logger.info(f"✅ Job Description Agent completed successfully")
+        return result
+    except Exception as e:
+        logger.error(f"❌ Error in Job Description Agent: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+def run_both_agents():
+    """Run both agents sequentially"""
+    logger.info("🔄 Running both agents...")
+    
+    results = {}
+    
+    # Run resume indexing agent
+    resume_result = run_resume_indexing()
+    if resume_result:
+        results['resume_indexing'] = resume_result
+    
+    # Run job description agent
+    job_result = run_job_description()
+    if job_result:
+        results['job_description'] = job_result
+    
+    return results
+
 def main():
-    """Main function to run your agent"""
+    """Main function to run your agents based on environment configuration"""
     logger.info("🚀 Starting Astranyx LangChain Agents")
+    logger.info(f"📊 Available agents: Resume Indexing={resume_indexing_available}, Job Description={job_description_available}")
     
     # Load environment variables
     load_dotenv()
     logger.info("✅ Environment variables loaded")
     
-    # Check for required API keys
-    required_vars = ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY']  # Add your required keys
+    # Check for required API keys (customize this list)
+    required_vars = ['OPENAI_API_KEY']  # Add your required keys
     missing_vars = [var for var in required_vars if not os.getenv(var)]
     
     if missing_vars:
         logger.warning(f"⚠️ Missing environment variables: {', '.join(missing_vars)}")
         logger.warning("Some functionality may be limited")
     
-    # Run your agent
-    if run_resume_agent:
-        try:
-            logger.info("🤖 Executing run_resume_agent...")
+    # Determine which agents to run based on environment variable
+    # You can set AGENT_TO_RUN in Render environment variables
+    agent_to_run = os.getenv('AGENT_TO_RUN', 'both').lower()
+    logger.info(f"🎯 Agent to run: {agent_to_run}")
+    
+    if agent_to_run == 'resume' or agent_to_run == 'resume_indexing':
+        # Run only resume indexing agent
+        run_resume_indexing()
+        
+    elif agent_to_run == 'job' or agent_to_run == 'job_description':
+        # Run only job description agent
+        run_job_description()
+        
+    elif agent_to_run == 'both':
+        # Run both agents
+        run_both_agents()
+        
+    elif agent_to_run == 'sequential':
+        # Run in sequence with custom logic
+        logger.info("🔄 Running agents in sequential mode")
+        
+        # Example: Run resume indexing first, then wait, then job description
+        run_resume_indexing()
+        logger.info("⏳ Waiting 5 seconds before running job description...")
+        time.sleep(5)
+        run_job_description()
+        
+    elif agent_to_run == 'periodic':
+        # Run agents periodically (example: every hour)
+        logger.info("⏰ Running agents in periodic mode")
+        
+        while True:
+            logger.info(f"🕐 Starting periodic run at {time.ctime()}")
             
-            # If your agent takes parameters, add them here
-            # result = run_resume_agent(your_params)
+            # Run both agents
+            run_both_agents()
             
-            # For now, just call it without params
-            result = run_resume_agent()
-            
-            logger.info(f"✅ Agent execution completed: {result}")
-            
-        except Exception as e:
-            logger.error(f"❌ Error running resume_agent: {e}")
-            import traceback
-            traceback.print_exc()
+            # Wait for specified interval (default 1 hour)
+            interval = int(os.getenv('RUN_INTERVAL', 3600))
+            logger.info(f"⏳ Sleeping for {interval} seconds until next run...")
+            time.sleep(interval)
+    
     else:
-        logger.error("❌ Cannot run agent - import failed")
+        logger.error(f"❌ Unknown AGENT_TO_RUN value: {agent_to_run}")
+        logger.info("Valid values: 'resume', 'job', 'both', 'sequential', 'periodic'")
+    
+    logger.info("👋 Agent execution completed. Main thread will stay alive for health checks.")
     
     # Keep the main thread alive
-    logger.info("👂 Agent execution completed. Main thread will stay alive for health checks.")
-    
-    # If you need the agent to run continuously, add a loop here
-    # For periodic tasks, you can use:
-    """
-    while True:
-        try:
-            # Run your agent periodically
-            run_resume_agent()
-            # Wait before next execution
-            time.sleep(3600)  # Sleep for 1 hour
-        except KeyboardInterrupt:
-            break
-        except Exception as e:
-            logger.error(f"Error in main loop: {e}")
-            time.sleep(60)  # Wait before retry
-    """
-    
-    # Instead of a busy loop, we can just keep the main thread alive
-    # while waiting for the health server thread
     try:
-        # This will keep the main thread alive indefinitely
-        # The health server thread runs in the background
         while True:
             time.sleep(60)  # Sleep for 60 seconds
-            # Optionally log that we're still alive
-            logger.debug("Heartbeat: main thread still running")
+            # Log heartbeat every 5 minutes
+            if int(time.time()) % 300 < 60:  # Roughly every 5 minutes
+                logger.debug("💓 Heartbeat: main thread still running")
     except KeyboardInterrupt:
-        logger.info("🛑 Shutting down...")
+        logger.info("🛑 Shutting down gracefully...")
 
 # ============================================
 # ENTRY POINT
 # ============================================
 
 if __name__ == "__main__":
-    logger.info("=" * 50)
-    logger.info("ASTRANYX LANGCHAIN AGENTS")
-    logger.info("=" * 50)
+    logger.info("=" * 60)
+    logger.info("ASTRANYX LANGCHAIN AGENTS - Resume & Job Description Processing")
+    logger.info("=" * 60)
     
     # Start health check server in background thread
     health_thread = threading.Thread(target=run_health_server, daemon=True)
