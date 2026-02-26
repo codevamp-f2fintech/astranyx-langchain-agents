@@ -3,10 +3,4 @@ services:
     name: hastranyx-langchain-agents
     runtime: docker 
     dockerfilePath: ./Dockerfile
-
-
-    buildCommand: |
-      pip install -r requirements.txt
-      bash build.sh
-
     startCommand: python main.py
