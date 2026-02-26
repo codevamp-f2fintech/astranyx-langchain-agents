@@ -1,17 +1,42 @@
-from resume_indexing_agent import resume_indexing_agent
-from job_description_agent import run_jd_matching
+import time
+import threading
+from resume_agent import run_resume_agent
+from jd_agent import run_jd_agent
 
-print("\n🚀 ATS AI AGENTS STARTED")
+print("🚀 ATS Agents Started")
 
-try:
+def run_agents():
 
-    print("\n📄 STEP 1 → Resume Indexing Agent")
-    resume_indexing_agent()
+    while True:
 
-    print("\n🎯 STEP 2 → JD Matching Agent")
-    run_jd_matching()
+        print("\n===== Resume Agent Running =====")
+        run_resume_agent()
 
-    print("\n✅ ALL AGENTS FINISHED SUCCESSFULLY")
+        print("\n===== JD Matching Agent Running =====")
+        run_jd_agent()
 
-except Exception as e:
-    print("\n❌ AGENT ERROR:", e)
+        print("\nSleeping 10 minutes...\n")
+
+        time.sleep(600)
+
+
+# Run agents in background thread
+threading.Thread(target=run_agents).start()
+
+
+# Simple web server to keep Render alive
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ATS Agents Running")
+
+
+port = 10000
+server = HTTPServer(("", port), Handler)
+
+print("🌐 Web Service Running on port", port)
+
+server.serve_forever()
