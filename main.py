@@ -1,7 +1,7 @@
 import time
 import threading
-from resume_indexing_agent import run_resume_agent
-from job_description_agent import run_jd_agent
+from resume_indexing_agent import resume_indexing_agent
+from job_description_agent import jd_matching_agent
 
 print("🚀 ATS Agents Started")
 
