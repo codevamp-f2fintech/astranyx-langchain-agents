@@ -1,7 +1,7 @@
 import time
 import threading
 from resume_indexing_agent import resume_indexing_agent
-from job_description_agent import jd_matching_agent
+from job_description_agent import jd_matching_agent  # This calls your parameterless function
 
 print("🚀 ATS Agents Started")
 
@@ -10,10 +10,10 @@ def run_agents():
     while True:
 
         print("\n===== Resume Agent Running =====")
-        run_resume_agent()
+        resume_indexing_agent()
 
         print("\n===== JD Matching Agent Running =====")
-        run_jd_agent()
+        jd_matching_agent()  # This correctly calls the function with no parameters
 
         print("\nSleeping 10 minutes...\n")
 
