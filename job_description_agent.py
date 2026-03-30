@@ -1,4 +1,7 @@
+# job_description_agent.py
 import os
+import asyncio
+import json
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from bson import ObjectId
@@ -6,50 +9,59 @@ from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
 from bs4 import BeautifulSoup
 import re
+import nats
+import logging
+from datetime import datetime
 
 load_dotenv()
 
-MONGO_URI = os.getenv("MONGODB_URI")
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
+MONGO_URI = os.getenv("MONGODB_URI")
 QDRANT_URL = os.getenv("QDRANT_URL")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
-
+NATS_SERVERS = os.getenv("NATS_SERVERS", "nats://localhost:4222")
 QDRANT_COLLECTION = "resumes"
 
-print("🎯 JD Agent Starting...")
+# Initialize services
+logger.info("Initializing JD Agent services...")
 
-# MongoDB Connection
-mongo = MongoClient(MONGO_URI)
-db = mongo["ats"]
-
-companies = db["companies"]
-applications = db["applications"]
-jobs = db["jobs"]
-job_statuses = db["job-statuses"]
-
-# Qdrant Connection - Using new client
 try:
-    qdrant = QdrantClient(
-        url=QDRANT_URL,
-        api_key=QDRANT_API_KEY
-    )
-    print("✅ Qdrant Connected")
+    mongo = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+    mongo.admin.command('ping')
+    db = mongo["ats"]
+    applications = db["applications"]
+    jobs = db["jobs"]
+    companies = db["companies"]
+    job_statuses = db["job-statuses"]
+    logger.info("✅ MongoDB connected")
 except Exception as e:
-    print(f"❌ Qdrant Connection Error: {e}")
+    logger.error(f"❌ MongoDB connection error: {e}")
+    mongo = None
+
+try:
+    qdrant = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY, timeout=60)
+    qdrant.get_collections()
+    logger.info("✅ Qdrant connected")
+except Exception as e:
+    logger.error(f"❌ Qdrant connection error: {e}")
     qdrant = None
 
-# Initialize the embedding model
 try:
     model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-    print("✅ Model Loaded")
+    logger.info("✅ Sentence transformer model loaded")
 except Exception as e:
-    print(f"❌ Model Loading Error: {e}")
+    logger.error(f"❌ Model loading error: {e}")
     model = None
 
-print("✅ JD Agent Ready\n")
 
-
-def clean_html(html):
+def clean_html(html: str) -> str:
     """Clean HTML content and return plain text"""
     if not html:
         return ""
@@ -59,181 +71,189 @@ def clean_html(html):
     return text.strip()
 
 
-def process_company_jd_matching(company):
-    """Process JD matching for a specific company using new Qdrant query_points method"""
-    
+async def process_job_matching(job_id: str, nc=None):
+    """Process JD matching for a specific job"""
     if qdrant is None or model is None:
-        print("❌ Qdrant or Model not initialized. Skipping...")
-        return
+        logger.error("Qdrant or Model not initialized")
+        return {"selected": 0, "rejected": 0, "error": "Services not initialized"}
     
-    company_selected = 0
-    company_rejected = 0
-
-    company_id = company["_id"]
-    company_name = company.get("name", "Unknown")
-
-    print(f"\n🏢 Company: {company_name}")
-    print(f"🆔 Company ID: {company_id}")
-
-    # Get open status for the company
+    logger.info(f"📋 Processing job matching: {job_id}")
+    
     try:
-        open_status = job_statuses.find_one({
-            "company_id": ObjectId(company_id),
-            "jobStatus": "Open"
-        })
-    except Exception as e:
-        print(f"❌ Error finding open status: {e}")
-        return
-
-    if not open_status:
-        print("⚠️ No Open Status found for this company")
-        return
-
-    # Get all open jobs for this company
-    try:
-        open_jobs = list(jobs.find({
-            "company_id": ObjectId(company_id),
-            "status": str(open_status["_id"])
-        }))
-        print(f"📊 Open Jobs: {len(open_jobs)}")
-    except Exception as e:
-        print(f"❌ Error finding open jobs: {e}")
-        return
-
-    for job in open_jobs:
-        job_id = str(job["_id"])
+        # Get job details
+        job = jobs.find_one({"_id": ObjectId(job_id)})
+        if not job:
+            logger.error(f"Job not found: {job_id}")
+            return {"selected": 0, "rejected": 0, "error": "Job not found"}
+        
         job_title = job.get("title", "Unknown")
         desc = job.get("description", "")
-
+        
         if not desc:
-            print(f"⚠️ Job {job_id} has no description, skipping...")
-            continue
-
-        print(f"\n📋 Processing Job: {job_title}")
-        print(f"🆔 Job ID: {job_id}")
-
+            logger.warning(f"Job {job_id} has no description")
+            return {"selected": 0, "rejected": 0, "error": "No description"}
+        
+        logger.info(f"📋 Job: {job_title}")
+        
         # Create vector from job description
-        try:
-            cleaned_desc = clean_html(desc)
-            vector = model.encode(cleaned_desc).tolist()
-            print(f"✅ Created embedding vector")
-        except Exception as e:
-            print(f"❌ Error creating embedding: {e}")
-            continue
-
-        # Search in Qdrant using NEW query_points method
-        try:
-            # NEW METHOD: Using query_points (qdrant-client >= 1.10.0)
-            print("📡 Using query_points method")
-            search_result = qdrant.query_points(
-                collection_name=QDRANT_COLLECTION,
-                query=vector,
-                limit=10000,
-                with_payload=True
-            )
+        cleaned_desc = clean_html(desc)
+        logger.info("🧠 Creating job embedding...")
+        vector = model.encode(cleaned_desc).tolist()
+        
+        # Search in Qdrant
+        logger.info("🔍 Searching Qdrant for matching resumes...")
+        search_result = qdrant.query_points(
+            collection_name=QDRANT_COLLECTION,
+            query=vector,
+            limit=10000,
+            with_payload=True
+        )
+        
+        # Extract points from search result
+        results = []
+        if hasattr(search_result, 'points'):
+            for point in search_result.points:
+                results.append({
+                    "score": point.score,
+                    "payload": point.payload
+                })
+        
+        logger.info(f"📊 Found {len(results)} total results")
+        
+        # Filter results for this specific job
+        filtered_results = []
+        for r in results:
+            if r["payload"] and r["payload"].get("job_id") == job_id:
+                filtered_results.append(r)
+        
+        results = filtered_results
+        logger.info(f"📊 Found {len(results)} results for this job")
+        
+        if not results:
+            logger.info("No results found for this job")
+            return {"selected": 0, "rejected": 0, "matched": False}
+        
+        # Calculate scores and cutoff
+        scores = [r["score"] for r in results]
+        best = max(scores)
+        cutoff = best * 0.52
+        logger.info(f"📈 Best score: {best:.4f}, Cutoff: {cutoff:.4f}")
+        
+        selected = 0
+        rejected = 0
+        
+        for r in results:
+            app_id = r["payload"].get("application_id")
+            score = r["score"]
             
-            # Extract points from search result
-            results = []
-            if hasattr(search_result, 'points'):
-                for point in search_result.points:
-                    # Create a simple object with score and payload attributes
-                    class SearchResult:
-                        def __init__(self, score, payload):
-                            self.score = score
-                            self.payload = payload
-                    
-                    results.append(SearchResult(point.score, point.payload))
-            
-            print(f"📊 Found {len(results)} total results")
-
-            # Filter results for this specific job
-            filtered_results = []
-            for r in results:
-                if r.payload and r.payload.get("job_id") == job_id:
-                    filtered_results.append(r)
-            
-            results = filtered_results
-            print(f"📊 Found {len(results)} results for this job")
-
-            if not results:
-                print("⚠️ No results found for this job")
+            if not app_id:
                 continue
-
-            # Calculate scores and cutoff
-            scores = [r.score for r in results]
-            best = max(scores)
-            cutoff = best * 0.60
-            print(f"📈 Best score: {best:.4f}, Cutoff: {cutoff:.4f}")
-
-            job_selected = 0
-            job_rejected = 0
-
-            for r in results:
-                app_id = r.payload.get("application_id")
-                score = r.score
-
-                if not app_id:
-                    print("⚠️ No application_id in payload, skipping...")
-                    continue
-
-                status = "selected" if score >= cutoff else "rejected"
-
-                if status == "selected":
-                    job_selected += 1
-                    company_selected += 1
-                else:
-                    job_rejected += 1
-                    company_rejected += 1
-
-                # Update application status in MongoDB
-                try:
-                    applications.update_one(
-                        {"_id": ObjectId(app_id)},
-                        {"$set": {"resume_status": status}}
-                    )
-                    print(f"✅ {app_id} - Score: {score:.4f} - Status: {status}")
-                except Exception as e:
-                    print(f"❌ Error updating application {app_id}: {e}")
-
-            print(f"📊 Job Results - Selected: {job_selected}, Rejected: {job_rejected}")
-
-        except Exception as e:
-            print(f"❌ Qdrant query_points error: {e}")
-            continue
-
-    print(f"\n📊 Company Results for {company_name} → Selected: {company_selected}, Rejected: {company_rejected}")
-
-
-def jd_matching_agent():
-    """Run JD matching for all companies with AI features enabled - Called from main.py"""
-    
-    print("\n" + "="*50)
-    print("🚀 Starting JD Matching for all companies")
-    print("="*50)
-    
-    if qdrant is None or model is None:
-        print("❌ Cannot run JD matching: Qdrant or Model not initialized")
-        return
-
-    try:
-        companies_ai = list(companies.find({"aiFeaturesEnabled": True}))
-        print(f"🏢 AI Companies found: {len(companies_ai)}")
-
-        if not companies_ai:
-            print("⚠️ No companies with AI features enabled")
-            return
-
-        for c in companies_ai:
+            
+            status = "selected" if score >= cutoff else "rejected"
+            
+            if status == "selected":
+                selected += 1
+            else:
+                rejected += 1
+            
+            # Update application status in MongoDB
             try:
-                process_company_jd_matching(c)
+                applications.update_one(
+                    {"_id": ObjectId(app_id)},
+                    {"$set": {
+                        "resume_status": status,
+                        "match_score": score,
+                        "matched_at": datetime.now(),
+                        "matched_job_id": job_id
+                    }}
+                )
+                logger.info(f"   {app_id}: {score:.4f} - {status}")
             except Exception as e:
-                print(f"❌ Error processing company {c.get('name', 'Unknown')}: {e}")
-                continue
-
+                logger.error(f"Error updating application {app_id}: {e}")
+        
+        logger.info(f"📊 Job Results - Selected: {selected}, Rejected: {rejected}")
+        return {"selected": selected, "rejected": rejected, "matched": True}
+        
     except Exception as e:
-        print(f"❌ Error fetching companies: {e}")
+        logger.error(f"Error processing job {job_id}: {e}")
+        return {"selected": 0, "rejected": 0, "error": str(e)}
+
+
+async def run_jd_agent():
+    """Run the JD agent with NATS listener"""
+    logger.info("="*60)
+    logger.info("🤖 JD AGENT STARTING")
+    logger.info("="*60)
     
-    finally:
-        print("\n" + "="*50)
-        print("✅ JD Matching Finished")
-        print("="*50 + "\n")
+    max_retries = 5
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            # Connect to NATS
+            logger.info(f"Connecting to NATS at {NATS_SERVERS}...")
+            nc = await nats.connect(
+                NATS_SERVERS,
+                reconnect_time_wait=2,
+                max_reconnect_attempts=10
+            )
+            logger.info("✅ NATS CONNECTED")
+            
+            # Message handler
+            async def message_handler(msg):
+                logger.info(f"🔔 RECEIVED MESSAGE on {msg.subject}")
+                try:
+                    data = json.loads(msg.data.decode())
+                    logger.info(f"📦 Message data: {data}")
+                    
+                    if msg.subject == "jd.match.job":
+                        job_id = data.get("job_id")
+                        if job_id:
+                            logger.info(f"⚡ MATCHING JOB: {job_id}")
+                            result = await process_job_matching(job_id, nc)
+                            logger.info(f"📊 Matching result: {result}")
+                        else:
+                            logger.error("No job_id in message")
+                            
+                    elif msg.subject == "jd.match.all":
+                        logger.info("⚡ MATCHING ALL JOBS REQUESTED")
+                        # Add all jobs matching logic here
+                        
+                except Exception as e:
+                    logger.error(f"Error in message handler: {e}", exc_info=True)
+            
+            # Subscribe to topics
+            logger.info("Subscribing to jd.match.job...")
+            await nc.subscribe("jd.match.job", cb=message_handler)
+            
+            logger.info("Subscribing to jd.match.all...")
+            await nc.subscribe("jd.match.all", cb=message_handler)
+            
+            logger.info("✅ JD Agent subscriptions active")
+            logger.info("🎧 Listening for messages on:")
+            logger.info("   - jd.match.job")
+            logger.info("   - jd.match.all")
+            logger.info("="*60)
+            logger.info("💡 Ready! Will match resumes when triggered")
+            logger.info("="*60)
+            
+            # Keep running
+            while True:
+                await asyncio.sleep(1)
+                
+        except Exception as e:
+            retry_count += 1
+            logger.error(f"JD Agent error (attempt {retry_count}/{max_retries}): {e}")
+            if retry_count < max_retries:
+                logger.info(f"Retrying in 5 seconds...")
+                await asyncio.sleep(5)
+            else:
+                logger.error("Max retries reached. Exiting.")
+                raise
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(run_jd_agent())
+    except KeyboardInterrupt:
+        logger.info("\n🛑 JD Agent stopped by user")
