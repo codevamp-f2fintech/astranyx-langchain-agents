@@ -142,8 +142,23 @@ async def process_single_resume(application_id: str, nc=None):
             logger.error(f"Application not found: {application_id}")
             return False
 
-        if app.get("rag_uploaded", False):
+        rag_uploaded = app.get("rag_uploaded", False)
+        # Handle string "false" / "true" from MongoDB
+        if isinstance(rag_uploaded, str):
+            rag_uploaded = rag_uploaded.lower() == "true"
+        
+        if rag_uploaded:
             logger.info(f"✅ Resume already indexed: {application_id}")
+            # Ensure we still trigger matching if it's already indexed
+            job_id = app.get("jobID")
+            if job_id and nc and nc.is_connected:
+                message = {
+                    "job_id":       str(job_id),
+                    "timestamp":    datetime.now().isoformat(),
+                    "triggered_by": "resume_agent_recheck",
+                }
+                await nc.publish("jd.match.job", json.dumps(message).encode())
+                logger.info(f"📤 Re-triggered JD matching for already indexed job: {job_id}")
             return True
 
         resume_url = app.get("resume")

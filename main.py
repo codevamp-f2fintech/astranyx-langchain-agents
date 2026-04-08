@@ -1,17 +1,4 @@
-"""
-run_all.py – single entry point for the ATS pipeline.
-
-Architecture:
-  MongoDBWatcher  runs in a thread-pool executor
-    └─ puts application_id into an asyncio.Queue
-  queue_dispatcher  (async task) drains the queue
-    └─ publishes resume.new via NATS
-  ResumeAgent  subscribes resume.new -> indexes in Qdrant
-  JDAgent      subscribes jd.match.job -> scores resumes
-
-One event loop. No duplicate agents. No thread/loop conflict.
-"""
-
+# main.py
 import asyncio
 import os
 import json

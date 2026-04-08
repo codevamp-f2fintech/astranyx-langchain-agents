@@ -1,6 +1,0 @@
-services:
-  - type: worker
-    name: hastranyx-langchain-agents
-    runtime: python
-    dockerfilePath: ./Dockerfile
-    startCommand: python main.py

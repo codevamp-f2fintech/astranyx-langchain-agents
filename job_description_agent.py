@@ -127,10 +127,14 @@ async def process_job_matching(job_id: str, nc=None):
                 filtered_results.append(r)
         
         results = filtered_results
-        logger.info(f"📊 Found {len(results)} results for this job")
+        logger.info(f"📊 Found {len(results)} results matching job_id: {job_id}")
         
         if not results:
-            logger.info("No results found for this job")
+            logger.info("No results found for this job in Qdrant")
+            # Log some other job_ids from the payload to see if there's a mismatch
+            if all_points := getattr(search_result, 'points', []):
+                other_ids = set(p.payload.get("job_id") for p in all_points[:10] if p.payload)
+                logger.info(f"🔍 Sample of other job_ids in Qdrant: {list(other_ids)}")
             return {"selected": 0, "rejected": 0, "matched": False}
         
         # Calculate scores and cutoff
