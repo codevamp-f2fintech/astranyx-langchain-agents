@@ -80,21 +80,27 @@ class MongoDBWatcher:
     async def watch_with_polling(self):
         """Fallback: Poll MongoDB every 5 seconds"""
         logger.info("🔄 Using polling mode (checks every 5 seconds)")
-        self.last_check = datetime.now()
+        seen_ids = set()
         
         while self.running:
             try:
-                new_resumes = self.collection.find({
+                # Find any resume that has not been processed yet
+                unprocessed = self.collection.find({
                     "resume": {"$exists": True, "$ne": None},
-                    "createdAt": {"$gt": self.last_check}
+                    "$or": [
+                        {"rag_uploaded": {"$in": [False, "false"]}},
+                        {"rag_uploaded": {"$exists": False}},
+                        {"resume_status": "open"}
+                    ]
                 })
                 
-                for doc in new_resumes:
+                for doc in unprocessed:
                     application_id = str(doc.get('_id'))
-                    logger.info(f"⚡ POLLING: New resume found: {application_id}")
-                    await self.publisher.publish_resume_new(application_id)
+                    if application_id not in seen_ids:
+                        seen_ids.add(application_id)
+                        logger.info(f"⚡ POLLING: Unprocessed resume found: {application_id}")
+                        await self.publisher.publish_resume_new(application_id)
                 
-                self.last_check = datetime.now()
                 
             except Exception as e:
                 logger.error(f"Polling error: {e}")

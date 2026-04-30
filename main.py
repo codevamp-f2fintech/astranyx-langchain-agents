@@ -57,17 +57,23 @@ def watch_mongo_thread(queue: asyncio.Queue, loop: asyncio.AbstractEventLoop):
 
     except OperationFailure:
         logger.warning("No replica-set - falling back to polling (5 s interval)")
-        last_check = datetime.now()
+        seen_ids = set()
         while True:
             try:
-                for doc in collection.find({
-                    "resume":    {"$exists": True, "$ne": None},
-                    "createdAt": {"$gt": last_check},
-                }):
+                unprocessed = collection.find({
+                    "resume": {"$exists": True, "$ne": None},
+                    "$or": [
+                        {"rag_uploaded": {"$in": [False, "false"]}},
+                        {"rag_uploaded": {"$exists": False}},
+                        {"resume_status": "open"}
+                    ]
+                })
+                for doc in unprocessed:
                     app_id = str(doc["_id"])
-                    logger.info(f"Polling: new resume -> {app_id}")
-                    enqueue(app_id)
-                last_check = datetime.now()
+                    if app_id not in seen_ids:
+                        seen_ids.add(app_id)
+                        logger.info(f"Polling: unprocessed resume -> {app_id}")
+                        enqueue(app_id)
             except Exception as exc:
                 logger.error(f"Polling error: {exc}")
             time.sleep(5)
